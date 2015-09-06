@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 ################################################################################
 #
@@ -65,7 +65,7 @@ def main():
                         datefmt="%Y-%m-%d %H:%M:%S")
     cf = CryptFiend()
     # 使用代理
-    # print cf.connect('http://www.baidu.com', '101.71.27.120:80')
+     # print cf.connect('http://www.baidu.com', '101.71.27.120:80')
     # 不使用代理
     print cf.connect('http://www.baidu.com')
 
