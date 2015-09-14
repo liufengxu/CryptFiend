@@ -9,7 +9,7 @@
 description:
 author: liufengxu
 date: 2015-07-05 12:39:35
-last modified: 2015-09-13 23:54:24
+last modified: 2015-09-14 23:57:41
 version:
 """
 
@@ -19,6 +19,7 @@ import cookielib
 import re
 import time
 from bs4 import BeautifulSoup
+import Queue
 import sys
 reload(sys)
 sys.setdefaultencoding('utf-8')
@@ -118,6 +119,7 @@ def main():
     proxy = sys.argv[2]
     head = 'http://www.xiachufang.com'
     tail = '?page='
+    q = Queue.Queue()
     with open(input_file) as fp:
         for line in fp:
             segs = line[:-1].split(' ')
@@ -127,10 +129,12 @@ def main():
             for i in xrange(1, 51):
                 time.sleep(1)
                 url = head + url_part + tail + str(i)
-                do_task(url, proxy, tag)
-                else:
-                    logging.info('page %s is empty', url)
-                    continue
+                q.put((url, proxy, tag))
+            else:
+                logging.info('page %s is empty', url)
+                continue
+
+    do_task(url, proxy, tag)
 
 if __name__ == '__main__':
     main()
