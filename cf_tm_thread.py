@@ -9,7 +9,7 @@
 description: 多线程版抓取网页
 author: liufengxu
 date: 2015-09-15 12:09:58
-last modified: 2015-09-16 14:39:01
+last modified: 2015-09-17 00:58:43
 version: 1.0.0
 """
 
@@ -27,18 +27,19 @@ reload(sys)
 sys.setdefaultencoding('utf-8')
 
 Q_MAX_SIZE = 1024
-TASK_MAX = 16
+TASK_MAX = 8
 
 
 class CryptFiend(object):
     """ 蜘蛛类 """
     def __init__(self):
-        self.timeout = 20
+        self.timeout = 10
         self.proxy_handler = urllib2.ProxyHandler({})
 
     def connect(self, url, http_proxy='null'):
         """ 抓取网页 """
         resp_html = None
+        ret_code = '0'
         try:
             if http_proxy != 'null':
                 logging.debug('use http proxy')
@@ -53,15 +54,23 @@ class CryptFiend(object):
             req = urllib2.Request(url=url, headers=self.headers)
             logging.debug('set request url ok')
             resp = self.opener.open(req, timeout=self.timeout)
+            logging.debug('%s', resp.getcode())
+            ret_code = str(resp.getcode())
             logging.debug('urlopen success')
             logging.debug('%s', resp.info())
             resp_html = resp.read()
             resp.close()
         except urllib2.URLError as e:
-            logging.error('%s', e.reason)
+            logging.error('%s', e)
+            reobj = re.compile('[0-9]{3}')
+            errno = re.findall(reobj, str(e))
+            if errno:
+                return resp_html, str(errno[0])
+            # it's strange if I use e.code, the ERROR is :
+            # 'URLError' object has no attribute 'code'
             # logging.error('%s: %s', e.code, e.reason)
             # return str(e.code)
-        return resp_html
+        return resp_html, ret_code
 
     def set_proxy_handler(self, http_proxy):
         """ 设置代理 """
@@ -91,12 +100,12 @@ class HtmlParser(object):
             for a in a_list:
                 print a['href'], a.contents[0]
 
-    def parse_middle(self, tag):
+    def parse_middle(self, tag, page_num):
         p_list = self.bs.findAll('p', {'class': 'name'})
         for p in p_list:
             a_list = p.findAll('a', href=re.compile('\/recipe\/[0-9]*\/'))
             for a in a_list:
-                print a['href'] + '\t' + tag
+                print a['href'] + '\t' + tag + '\t' + page_num
 
 
 class Worker(threading.Thread):
@@ -117,40 +126,72 @@ class Worker(threading.Thread):
     def do_work(self):
         logging.debug('get page start to work')
         # 读队列信息
-        task_info = self.task_queue.get()
-        logging.debug(self.resource_queue.qsize())
-        proxy = self.resource_queue.get()
+        logging.debug('task queue length: %s', self.task_queue.qsize())
+        try:
+            task_info = self.task_queue.get()
+        except Exception as e:
+            logging.error('%s', e)
+            return False
+        if not task_info:
+            logging.debug('task queue is empty')
+            return False
+        logging.debug('proxy queue length: %s', self.resource_queue.qsize())
+        try:
+            proxy = self.resource_queue.get()
+        except Exception as e:
+            logging.error('%s', e)
+            return False
+        if not proxy:
+            logging.debug('resource queue is empty')
+            return False
         logging.debug('proxy is %s', proxy)
         # 业务逻辑
-        logging.debug('get page start to crawl')
-        flag = True
-        segs = task_info.split(' ')
-        if len(segs) != 2:
-            logging.error('input format not right')
-            return False
-        url_part, tag = segs
-        head = 'http://www.xiachufang.com'
-        tail = '?page='
-        cf = CryptFiend()
-        for i in xrange(1, 51):
-            logging.debug('get page %d', i)
-            time.sleep(random.uniform(0.5, 1.5))
-            url = head + url_part + tail + str(i)
-            xcf_middle = cf.connect(url, proxy)
-            if xcf_middle:
-                if xcf_middle == '404':
+        self.crawl(task_info, proxy)
+
+    def crawl(self, task_info, proxy):
+        flag = False
+        try:
+            logging.debug('get page start to crawl')
+            segs = task_info.split(' ')
+            if len(segs) != 2:
+                logging.error('input format not right')
+                return False
+            url_part, tag = segs
+            head = 'http://www.xiachufang.com'
+            tail = '?page='
+            cf = CryptFiend()
+            for i in xrange(1, 51):
+                logging.debug('get page %d', i)
+                time.sleep(random.uniform(2, 2.8))
+                url = head + url_part + tail + str(i)
+                xcf_middle, ret_code = cf.connect(url, proxy)
+                logging.debug('%s', ret_code)
+                if ret_code == '404':
+                    flag = True
                     break
-                logging.debug('start parsing')
-                hp = HtmlParser(xcf_middle)
-                hp.parse_middle(tag)
-            else:
-                logging.debug('maybe something wrong')
-                flag = False
-        # 向队列反馈信息
-        self.task_queue.task_done()
+                elif ret_code == '200':
+                    if xcf_middle:
+                        logging.debug('start parsing')
+                        hp = HtmlParser(xcf_middle)
+                        hp.parse_middle(tag, str(i))
+                        logging.debug('html parsing success')
+                        flag = True
+                    else:
+                        logging.debug('html parsing problems')
+                elif ret_code == '503':
+                    flag = False
+                    break
+        except Exception as e:
+            logging.error('%s', e)
+        finally:
+            # 向队列反馈信息
+            self.task_queue.task_done()
         if flag:
-            self.resource_queue.put(proxy)
+            logging.info('Bonus the good proxy: %s', proxy)
             self.resource_queue.put(proxy)  # copy self as bonus
+        else:
+            logging.info('Record the bad proxy: %s', proxy)
+            self.task_queue.put(task_info)
         return flag
 
 
@@ -169,7 +210,7 @@ def main():
             task_queue.put(task_id)
     # init proxy(resource) queue
     proxy_file = sys.argv[2]
-    for i in xrange(8):  # 每个代理初始化8份
+    for i in xrange(1):  # 每个代理初始化1份
         with open(proxy_file) as fp:
             for line in fp:
                 proxy = line[:-1]
