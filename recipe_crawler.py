@@ -9,7 +9,7 @@
 description: 多线程版抓取网页
 author: liufengxu
 date: 2015-09-15 12:09:58
-last modified: 2015-09-18 23:21:49
+last modified: 2015-09-19 23:32:54
 version: 1.0.0
 """
 
@@ -155,8 +155,9 @@ class HtmlParser(object):
                 if food_name_list[0].contents[0].strip():
                     food_name = food_name_list[0].contents[0].strip()
                 else:
-                    logging.debug('%s', food_name_list[0].a.contents)
-                    food_name = food_name_list[0].a.contents[0]
+                    if food_name_list[0].a:
+                        logging.debug('%s', food_name_list[0].a.contents)
+                        food_name = food_name_list[0].a.contents[0]
             food_unit_list = bs_tag.findAll('td', {'class': 'unit has-border'})
             if food_unit_list:
                 food_unit = food_unit_list[0].contents[0].strip()
@@ -164,16 +165,17 @@ class HtmlParser(object):
             food_list.append(food_item)
         output.append(','.join(food_list))
         # 标签list
-        a_list = self.bs.findAll('a', {'href':
-                                       re.compile('\/category\/[0-9]*\/'),
-                                       'data-ga-event': '公共页面/导航栏/$text',
-                                       })
-        sub_list = []
-        if a_list:
-            for a in a_list:
-                if a.contents:
-                    sub_list.append(str(a.contents[0]))
-        output.append(','.join(sub_list))
+        cate_list = []
+        div_list = self.bs.findAll('div', {'class': 'recipe-cats'})
+        if div_list:
+            div_tag = div_list[0]
+            a_list = div_tag.findAll('a',
+                                     href=re.compile('\/category\/[0-9]*\/'))
+            if a_list:
+                for a in a_list:
+                    if a.contents:
+                        cate_list.append(str(a.contents[0]))
+        output.append(','.join(cate_list))
         print '\t'.join(output)
 
 
